@@ -187,8 +187,6 @@ make setup-egaroucid
 make setup
 ```
 
-> **注意（Egaroucid）**: Egaroucid のビルドには数分かかることがあります。
-
 セットアップが成功すると、以下のパスにバイナリが配置されます。
 
 ```text
@@ -238,13 +236,11 @@ go build -o rdg ./cmd/rdg
 
 ## 実行
 
-### はじめて実行する場合（推奨）
-
 ```sh
-./rdg --yes
+./rdg
 ```
 
-`--yes` を付けると、エンジン起動時の確認プロンプトを自動でスキップします。設定ファイルはデフォルトの `configs/config.toml` と `configs/app.toml` が使われます。
+設定ファイルはデフォルトの `configs/config.toml` と `configs/app.toml` が使われます。
 
 ### 設定ファイルを明示的に指定する場合
 
@@ -488,9 +484,7 @@ y = np.array([value for _, _, value in records], dtype=np.float32)
 
 ### value の意味
 
-Edax / Egaroucid の `value` はおおむね**ディスク差**（手番側の石数 − 相手の石数）で、範囲は −64〜+64 程度です。
-
-phase ごとに独立した評価関数を学習する場合は、`datasets/phase_XX/train.rd` を phase ごとに別々のモデルで学習します。
+`value` は**ディスク差**（手番側の石数 − 相手の石数）で、範囲は −64〜+64 です。
 
 ---
 
