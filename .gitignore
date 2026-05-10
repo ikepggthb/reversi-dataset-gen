@@ -1,0 +1,15 @@
+# Go build artifacts
+/rdg
+*.test
+*.out
+
+# Engine clone targets
+/third_party/
+
+# Generated data
+/data/
+ref
+logs
+
+# AI
+.claude

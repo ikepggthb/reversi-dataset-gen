@@ -1,0 +1,26 @@
+# all_positions mode example. Keep phases shallow unless dry-run confirms size.
+
+mode = "all_positions"
+output_dir = "../datasets"
+phases = "1..9"
+samples_per_phase = 0
+
+[split]
+train = 0.98
+valid = 0.01
+test = 0.01
+
+[playout]
+ai_probability = 0
+dedupe = "canonical_board"
+max_attempts_multiplier = 100
+
+[self_play]
+workers = 8
+retries = 3
+
+[self_play.ai]
+name = "edax"
+level = 12
+threads = 1
+timeout = "300s"

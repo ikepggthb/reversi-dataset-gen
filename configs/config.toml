@@ -1,0 +1,36 @@
+# Dataset generation config.
+
+mode = "normal"
+output_dir = "../datasets/test2_lv3-12"
+phases = "10..60"
+samples_per_phase = 1000
+
+[split]
+train = 0.98
+valid = 0.01
+test = 0.01
+
+[playout]
+ai_probability = 0
+dedupe = "canonical_board"
+max_attempts_multiplier = 100
+
+[playout.ai]
+name = "edax"
+level = 3
+threads = 1
+timeout = "10s"
+
+[self_play]
+workers = 19
+retries = 3
+
+[self_play.ai]
+name = "edax"
+level = 20
+threads = 1
+timeout = "300s"
+
+[window]
+enabled = true
+size = 10

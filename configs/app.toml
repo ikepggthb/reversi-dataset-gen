@@ -1,0 +1,18 @@
+# Application engine registry. Search settings belong in configs/config.toml.
+
+setup = "missing"
+
+[log]
+file = "../logs/rdg.log"
+max_size_mb = 100
+max_files = 5
+
+[engines.edax]
+kind = "edax"
+binary = "../third_party/edax-reversi/bin/lEdax-x86-64-v3"
+eval_file = "../third_party/edax-reversi/bin/data/eval.dat"
+
+[engines.egaroucid]
+kind = "egaroucid"
+binary = "../third_party/Egaroucid/bin/Egaroucid_for_Console.out"
+eval_file = "../third_party/Egaroucid/bin/resources/eval.egev2"
