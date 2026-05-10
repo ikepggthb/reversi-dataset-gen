@@ -42,6 +42,47 @@ Reversi は序盤・中盤・終盤で性質が大きく異なります。石数
 | 34          | 30    | 中盤 |
 | 64（終局）  | 60    | ゲーム終了 |
 
+### なぜ phase 到達前の着手はランダムなのか（playout）
+
+目標の phase に到達するまでの着手を **ランダム**にする理由は、**局面の多様性を確保するため**です。
+
+たとえば phase 30 のデータを集めたいとします。phase 30 に到達するには 30 手打つ必要があります。この 30 手を毎回強い AI に打たせると、AI は似たような最善手を選ぶため、**毎回ほぼ同じ序盤展開になり、phase 30 での局面が偏ります**。同じような局面ばかりで学習しても汎化性能が上がりません。
+
+ランダム着手にすると毎回異なる展開になり、phase 30 での局面が多様になります。`ai_probability` を 0 より大きくすると、一定の割合で AI の手も混ぜられます。強い局面も含めたい場合に使いますが、多様性とのトレードオフになります。
+
+```
+playout（phase 到達まで）     self_play.ai（評価）
+──────────────────────────  →  ──────────────────────────
+ランダム or AI で 30 手          Edax lv20 がこの盤面を評価
+（多様な局面を生成）             → value を記録
+```
+
+### Window モードとは何か
+
+**Window モードなし**だと、各 phase のデータを集めるたびにゲームを最初からやり直します。
+
+```
+phase 10 のデータが欲しい → ゲームを開始 → 10 手打つ → 評価 → ゲーム終了
+phase 11 のデータが欲しい → ゲームを開始 → 11 手打つ → 評価 → ゲーム終了
+phase 12 のデータが欲しい → ゲームを開始 → 12 手打つ → 評価 → ゲーム終了
+...
+```
+
+phase が多いほどゲーム数が膨大になり非効率です。
+
+**Window モード（`window.enabled = true`）** では、1 回のゲームを最後まで打ちながら、途中の複数の phase で評価を行います。
+
+```
+1 回のゲームを開始
+  → phase 10 に到達 → 評価して記録
+  → phase 11 に到達 → 評価して記録
+  → phase 12 に到達 → 評価して記録
+  ...（size=10 なら 10 phase ぶん）
+  → ゲーム終了
+```
+
+`window.size = 10` なら 1 ゲームで 10 phase ぶんのデータを取れるため、**生成速度が大幅に向上**します。ただし同一ゲームから得たデータは局面間に相関があるため、学習データとしての独立性はやや下がります。
+
 ### なぜビットボード形式でデータを保存するのか
 
 盤面を 8×8 = 64 マスとみなし、手番側の石を u64 の各ビットで表現するのが**ビットボード**です。
@@ -62,9 +103,10 @@ Reversi は序盤・中盤・終盤で性質が大きく異なります。石数
 4. [実行](#実行)
 5. [設定ファイルの説明](#設定ファイルの説明)
 6. [出力ファイルの説明](#出力ファイルの説明)
-7. [進捗表示とログ](#進捗表示とログ)
-8. [中断・再開・やり直し](#中断再開やり直し)
-9. [開発者向け](#開発者向け)
+7. [生成したデータを学習に使う](#生成したデータを学習に使う)
+8. [進捗表示とログ](#進捗表示とログ)
+9. [中断・再開・やり直し](#中断再開やり直し)
+10. [開発者向け](#開発者向け)
 
 ---
 
@@ -359,6 +401,93 @@ with open("train.rd", "rb") as f:
 # 全 phase を最初からやり直す（既存出力を削除）
 ./rdg --force
 ```
+
+---
+
+## 生成したデータを学習に使う
+
+生成した `.rd` ファイルは「盤面 → 評価値」を予測するニューラルネットワークの**教師あり学習**に使えます。
+
+### 学習の全体像
+
+```
+.rd ファイル
+ (own_bits, opp_bits, value) のペアが大量に入っている
+        ↓
+  ビットボードを特徴量に変換
+  （各マスの石の有無を特徴ベクトルや 2D マップとして表現）
+        ↓
+  ニューラルネットワークに入力し、value を予測
+        ↓
+  予測値と正解 value の誤差（MSE など）を最小化するよう学習
+        ↓
+  学習済み評価関数
+  → Reversi AI の探索（minimax/alpha-beta）に組み込む
+```
+
+### Python で .rd を読み込んで学習する例
+
+```python
+import struct
+import numpy as np
+import torch
+import torch.nn as nn
+
+HEADER = b"RDGBBVAL1\n"
+
+def load_rd(path):
+    """(own, opp, value) のタプルリストを返す"""
+    records = []
+    with open(path, "rb") as f:
+        assert f.read(len(HEADER)) == HEADER
+        while chunk := f.read(18):
+            own, opp, value = struct.unpack_from("<QQh", chunk)
+            records.append((own, opp, value))
+    return records
+
+def bitboard_to_features(own: int, opp: int) -> np.ndarray:
+    """ビットボード 2 枚を 128 次元の特徴ベクトルに変換する"""
+    own_bits = np.array([(own >> i) & 1 for i in range(64)], dtype=np.float32)
+    opp_bits = np.array([(opp >> i) & 1 for i in range(64)], dtype=np.float32)
+    return np.concatenate([own_bits, opp_bits])  # shape: (128,)
+
+# データ読み込み
+records = load_rd("datasets/phase_30/train.rd")
+X = np.stack([bitboard_to_features(own, opp) for own, opp, _ in records])
+y = np.array([value for _, _, value in records], dtype=np.float32)
+
+# PyTorch Dataset
+dataset = torch.utils.data.TensorDataset(
+    torch.from_numpy(X),
+    torch.from_numpy(y).unsqueeze(1),
+)
+loader = torch.utils.data.DataLoader(dataset, batch_size=256, shuffle=True)
+
+# シンプルな MLP 評価関数
+model = nn.Sequential(
+    nn.Linear(128, 256), nn.ReLU(),
+    nn.Linear(256, 256), nn.ReLU(),
+    nn.Linear(256, 1),
+)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+# 学習ループ
+for epoch in range(10):
+    for X_batch, y_batch in loader:
+        pred = model(X_batch)
+        loss = nn.functional.mse_loss(pred, y_batch)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+```
+
+> 上記は動作確認用の最小例です。実用的な評価関数には CNN や残差ネットワーク、対称性を利用したデータ拡張（回転・反転）などを組み合わせることが多いです。
+
+### value の意味と正規化
+
+Edax / Egaroucid の `value` はおおむね**ディスク差**（手番側の石数 − 相手の石数）で、範囲は −64〜+64 程度です。学習時は正規化（÷64 など）すると収束が安定します。
+
+phase ごとに独立した評価関数を学習する場合は、`datasets/phase_XX/train.rd` を phase ごとに別々のモデルで学習します。
 
 ---
 
