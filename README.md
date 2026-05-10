@@ -38,19 +38,19 @@ Othello AI の基本構造は **「探索 + 評価関数」** の組み合わせ
 
 スコアが高いほど手番側に有利な局面です。AI はこのスコアを手がかりに最善手を探します。つまり **評価関数の精度が AI の強さを直接決めます**。
 
-### 伝統的な評価関数とニューラルネット評価関数の違い
+### 手作り評価関数とデータ駆動型評価関数の違い
 
-**伝統的な評価関数（手作り）**は、人間が「隅を取ると有利」「辺は安定している」といった知識をルールとして書き込みます。シンプルですが、人間が気づいていない複雑なパターンは捉えられません。
+**手作り評価関数**は、人間が「隅を取ると有利」「辺は安定している」といった知識をルールとして書き込みます。シンプルですが、人間が気づいていない複雑なパターンは捉えられません。
 
-**ニューラルネット評価関数**は、大量の「盤面と評価値のペア」からパターンを自動学習します。人間が明示的にルールを書く必要がなく、適切なデータがあれば人間の知識を超えた評価ができるようになります。
+**データ駆動型評価関数**は、大量の「盤面と評価値のペア」からパターンを自動的に学習します。線形モデル・決定木・ニューラルネットなど手法はさまざまですが、いずれも **学習データが必要** という点は共通です。
 
-| | 手作り評価関数 | ニューラルネット評価関数 |
+| | 手作り評価関数 | データ駆動型評価関数 |
 |--|--|--|
 | 実装 | ルールを人間が書く | データから自動学習 |
 | 精度の上限 | 人間の知識に依存 | データの質・量に依存 |
 | 必要なもの | ドメイン知識 | 大量の学習データ |
 
-ニューラルネット評価関数を作るには「大量の学習データ」が必要です。**このツールはその学習データを生成します。**
+**このツールはその学習データ（value dataset）を生成します。**
 
 ---
 
@@ -58,7 +58,7 @@ Othello AI の基本構造は **「探索 + 評価関数」** の組み合わせ
 
 ### このツールが何をするか
 
-ニューラルネット評価関数の学習には「**盤面とその評価値のペア**」が大量に必要です。これが **value dataset** です。このツールはその dataset を自動生成します。
+データ駆動型評価関数の学習には「**盤面とその評価値のペア**」が大量に必要です。これが **value dataset** です。このツールはその dataset を自動生成します。
 
 ### なぜ AI エンジンを使うのか
 
@@ -452,7 +452,7 @@ with open("train.rd", "rb") as f:
 
 ## 生成したデータを学習に使う
 
-生成した `.rd` ファイルは「盤面 → 評価値」を予測するニューラルネットワークの**教師あり学習**に使えます。
+生成した `.rd` ファイルは「盤面 → 評価値」を予測する**教師あり学習**に使えます。線形モデル・決定木・ニューラルネットなど、回帰を扱えるあらゆる手法に対応できます。
 
 ### 学習の全体像
 
@@ -461,23 +461,19 @@ with open("train.rd", "rb") as f:
  (own_bits, opp_bits, value) のペアが大量に入っている
         ↓
   ビットボードを特徴量に変換
-  （各マスの石の有無を特徴ベクトルや 2D マップとして表現）
+  （各マスの石の有無など、使いたい表現に変換する）
         ↓
-  ニューラルネットワークに入力し、value を予測
-        ↓
-  予測値と正解 value の誤差（MSE など）を最小化するよう学習
+  任意の学習モデルで value を予測するよう学習
         ↓
   学習済み評価関数
   → Reversi AI の探索（minimax/alpha-beta）に組み込む
 ```
 
-### Python で .rd を読み込んで学習する例
+### Python で .rd を読み込む例
 
 ```python
 import struct
 import numpy as np
-import torch
-import torch.nn as nn
 
 HEADER = b"RDGBBVAL1\n"
 
@@ -497,41 +493,19 @@ def bitboard_to_features(own: int, opp: int) -> np.ndarray:
     opp_bits = np.array([(opp >> i) & 1 for i in range(64)], dtype=np.float32)
     return np.concatenate([own_bits, opp_bits])  # shape: (128,)
 
-# データ読み込み
 records = load_rd("datasets/phase_30/train.rd")
 X = np.stack([bitboard_to_features(own, opp) for own, opp, _ in records])
 y = np.array([value for _, _, value in records], dtype=np.float32)
 
-# PyTorch Dataset
-dataset = torch.utils.data.TensorDataset(
-    torch.from_numpy(X),
-    torch.from_numpy(y).unsqueeze(1),
-)
-loader = torch.utils.data.DataLoader(dataset, batch_size=256, shuffle=True)
-
-# シンプルな MLP 評価関数
-model = nn.Sequential(
-    nn.Linear(128, 256), nn.ReLU(),
-    nn.Linear(256, 256), nn.ReLU(),
-    nn.Linear(256, 1),
-)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-# 学習ループ
-for epoch in range(10):
-    for X_batch, y_batch in loader:
-        pred = model(X_batch)
-        loss = nn.functional.mse_loss(pred, y_batch)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+# X, y を任意の学習ライブラリに渡す
+# 例: sklearn.linear_model.Ridge(alpha=1.0).fit(X, y)
+#     sklearn.ensemble.GradientBoostingRegressor().fit(X, y)
+#     または PyTorch / Keras でモデルを組む
 ```
 
-> 上記は動作確認用の最小例です。実用的な評価関数には CNN や残差ネットワーク、対称性を利用したデータ拡張（回転・反転）などを組み合わせることが多いです。
+### value の意味
 
-### value の意味と正規化
-
-Edax / Egaroucid の `value` はおおむね**ディスク差**（手番側の石数 − 相手の石数）で、範囲は −64〜+64 程度です。学習時は正規化（÷64 など）すると収束が安定します。
+Edax / Egaroucid の `value` はおおむね**ディスク差**（手番側の石数 − 相手の石数）で、範囲は −64〜+64 程度です。
 
 phase ごとに独立した評価関数を学習する場合は、`datasets/phase_XX/train.rd` を phase ごとに別々のモデルで学習します。
 
