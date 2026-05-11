@@ -147,6 +147,7 @@ phase が多いほど必要なゲーム数が増え、生成時間も伸びま�
 8. [進捗表示とログ](#進捗表示とログ)
 9. [中断・再開・やり直し](#中断再開やり直し)
 10. [開発者向け](#開発者向け)
+11. [Acknowledgments](#acknowledgments)
 
 ---
 
@@ -505,6 +506,26 @@ go vet ./...
 ```
 
 コントリビューションのルールは [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+
+---
+
+## Acknowledgments
+
+このツールは以下のオープンソースプロジェクトを利用しています。
+
+### Edax
+- **作者**: Richard Delorme ([@abulmo](https://github.com/abulmo)), Toshihiko Okuhara ([@okuhara](https://github.com/okuhara))
+- **リポジトリ**: https://github.com/abulmo/edax-reversi
+- **ライセンス**: [GPL v3](https://github.com/abulmo/edax-reversi/blob/master/LICENSE)
+
+### Egaroucid
+- **作者**: Takuto Yamana ([@Nyanyan](https://github.com/Nyanyan))
+- **リポジトリ**: https://github.com/Nyanyan/Egaroucid
+- **ライセンス**: [GPL v3](https://github.com/Nyanyan/Egaroucid/blob/master/LICENSE)
+
+---
+
+なお、本ツール（MIT ライセンス）はこれらのエンジンを**外部プロセスとして起動する**だけであり、ソースコードのリンクや組み込みは行っていません。GPL の伝染は発生しませんが、エンジン本体を利用・再配布する場合はそれぞれの GPL v3 ライセンスに従ってください。
 
 ---
 
