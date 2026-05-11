@@ -520,7 +520,7 @@ go vet ./...
 このツールは以下のオープンソースプロジェクトを利用しています。
 
 ### Edax
-- **作者**: Richard Delorme ([@abulmo](https://github.com/abulmo))
+- **作者**: Richard Delorme ([@abulmo](https://github.com/abulmo)), Toshihiko Okuhara ([@okuhara](https://github.com/okuhara))
 - **リポジトリ**: https://github.com/abulmo/edax-reversi
 - **ライセンス**: [GPL v3](https://github.com/abulmo/edax-reversi/blob/master/LICENSE)
 
