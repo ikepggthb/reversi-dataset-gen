@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ---- ユニットテスト・静的解析 ----
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Format check
+        run: |
+          out=$(gofmt -l $(find . -name '*.go' -not -path './third_party/*'))
+          if [ -n "$out" ]; then
+            echo "needs gofmt: $out"
+            exit 1
+          fi
+
+      - name: Test
+        run: go test ./...
+
+      - name: Test (race)
+        run: go test -race ./...
+
+  # ---- 結合テスト（Edax） ----
+  integration-edax:
+    name: Integration test (Edax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install build dependencies
+        run: sudo apt-get install -y clang
+
+      - name: Cache Edax
+        uses: actions/cache@v4
+        with:
+          path: third_party/edax-reversi
+          key: edax-${{ hashFiles('Makefile') }}
+
+      - name: Setup Edax
+        run: make setup-edax
+
+      - name: Build rdg
+        run: make build
+
+      - name: Dry-run
+        run: ./rdg --dry-run --config configs/ci.toml --app-config configs/app.toml
+
+      - name: Generate dataset
+        run: ./rdg --yes --config configs/ci.toml --app-config configs/app.toml
+
+      - name: Verify output
+        run: |
+          for phase in 10 11; do
+            dir="datasets/ci/phase_${phase}"
+            test -f "${dir}/train.rd"   || (echo "missing ${dir}/train.rd";   exit 1)
+            test -f "${dir}/metadata.json" || (echo "missing ${dir}/metadata.json"; exit 1)
+            test -f "${dir}/stats.json"    || (echo "missing ${dir}/stats.json";    exit 1)
+          done
+          echo "Output verified."
+
+  # ---- 結合テスト（Egaroucid） ----
+  integration-egaroucid:
+    name: Integration test (Egaroucid)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install build dependencies
+        run: sudo apt-get install -y clang
+
+      - name: Cache Egaroucid
+        uses: actions/cache@v4
+        with:
+          path: third_party/Egaroucid
+          key: egaroucid-${{ hashFiles('Makefile') }}
+
+      - name: Setup Egaroucid
+        run: make setup-egaroucid
+
+      - name: Build rdg
+        run: make build
+
+      - name: Generate dataset
+        run: ./rdg --yes --config configs/ci_egaroucid.toml --app-config configs/app.toml
+
+      - name: Verify output
+        run: |
+          for phase in 10 11; do
+            dir="datasets/ci_egaroucid/phase_${phase}"
+            test -f "${dir}/train.rd"      || (echo "missing ${dir}/train.rd";      exit 1)
+            test -f "${dir}/metadata.json" || (echo "missing ${dir}/metadata.json"; exit 1)
+          done
+          echo "Output verified."

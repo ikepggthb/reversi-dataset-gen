@@ -1,0 +1,25 @@
+# CI用最小設定。speed優先でlevel=1・少サンプル。
+mode = "normal"
+output_dir = "../datasets/ci"
+phases = "10..11"
+samples_per_phase = 10
+
+[split]
+train = 0.8
+valid = 0.1
+test = 0.1
+
+[playout]
+ai_probability = 0
+dedupe = "canonical_board"
+max_attempts_multiplier = 100
+
+[self_play]
+workers = 2
+retries = 1
+
+[self_play.ai]
+name = "edax"
+level = 1
+threads = 1
+timeout = "30s"
