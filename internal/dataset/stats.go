@@ -101,6 +101,7 @@ type metadata struct {
 	RecordMagic         string             `json:"record_magic"`
 	RecordSizeBytes     int                `json:"record_size_bytes"`
 	RecordSpec          string             `json:"record_spec"`
+	HashDefinition      string             `json:"hash_definition"`
 	ConfigPath          string             `json:"config_path"`
 	ConfigSHA256        string             `json:"config_sha256"`
 	ConfigEffectiveHash string             `json:"config_effective_hash"`
@@ -207,15 +208,23 @@ func fillSpeed(st *phaseStats) {
 }
 
 func buildMetadata(cfg Config, phase int) metadata {
+	meta := buildRunState(cfg, phase)
+	meta.Schema = "rdg_phase_metadata_v1"
+	meta.GeneratedAt = time.Now().Format(time.RFC3339)
+	return meta
+}
+
+func buildRunState(cfg Config, phase int) metadata {
 	generation := "phase"
 	if cfg.Window.Enabled {
 		generation = "window"
 	}
 	return metadata{
-		Schema: "rdg_phase_metadata_v1", Mode: cfg.Mode, Generation: generation, Phase: phase,
+		Schema: "rdg_phase_run_state_v1", Mode: cfg.Mode, Generation: generation, Phase: phase,
 		Format: FormatBitboard, RecordMagic: MagicBitboard, RecordSizeBytes: RecordSize,
-		RecordSpec: "u64 own_bits little-endian, u64 opponent_bits little-endian, i16 value little-endian; side-to-move perspective; bit0=a1, bit63=h8",
-		ConfigPath: cfg.ConfigPath, ConfigSHA256: cfg.ConfigSHA256, ConfigEffectiveHash: cfg.ConfigEffectiveHash,
+		RecordSpec:     "u64 own_bits little-endian, u64 opponent_bits little-endian, i16 value little-endian; side-to-move perspective; bit0=a1, bit63=h8",
+		HashDefinition: HashDefinition,
+		ConfigPath:     cfg.ConfigPath, ConfigSHA256: cfg.ConfigSHA256, ConfigEffectiveHash: cfg.ConfigEffectiveHash,
 		AppConfigPath: cfg.AppConfigPath, AppConfigSHA256: cfg.AppConfigSHA256,
 		Engine:              engineMetadata{Playout: cfg.Playout.AI, SelfPlay: cfg.SelfPlay.AI},
 		EngineIdentity:      cfg.EngineConfig.RunIdentity,
@@ -332,9 +341,17 @@ func loadMetadata(path string) (metadata, bool, error) {
 	return meta, true, nil
 }
 
+func loadResumeState(dir string) (metadata, bool, error) {
+	state, ok, err := loadMetadata(filepath.Join(dir, "run_state.json"))
+	if err != nil || ok {
+		return state, ok, err
+	}
+	return loadMetadata(filepath.Join(dir, "metadata.json"))
+}
+
 func checkResumeMetadata(meta metadata, cfg Config, phase int) error {
-	if meta.ConfigEffectiveHash != cfg.ConfigEffectiveHash || meta.Phase != phase || meta.Mode != cfg.Mode {
-		return fmt.Errorf("phase_%02d: existing metadata is incompatible with current config; use --force to rebuild", phase)
+	if meta.HashDefinition != HashDefinition || meta.ConfigEffectiveHash != cfg.ConfigEffectiveHash || meta.Phase != phase || meta.Mode != cfg.Mode {
+		return fmt.Errorf("phase_%02d: existing metadata is incompatible with current config; use --resume --repair to rebuild this phase or --force to rebuild all", phase)
 	}
 	return nil
 }

@@ -25,6 +25,7 @@ const (
 	ModeAllPositions = "all_positions"
 
 	FormatBitboard = "rdgbitboard_v1"
+	HashDefinition = "canonical_own_opponent_v1"
 	MagicBitboard  = "RDGBBVAL1\n"
 	RecordSize     = 18
 )
@@ -343,8 +344,9 @@ func effectiveHash(cfg Config) string {
 		SelfPlay        SelfPlayConfig `json:"self_play"`
 		Window          WindowConfig   `json:"window"`
 		AppConfigSHA256 string         `json:"app_config_sha256"`
+		HashDefinition  string         `json:"hash_definition"`
 	}
-	b, _ := json.Marshal(eff{cfg.Mode, cfg.Phases, cfg.Seed, cfg.Split, cfg.Playout, cfg.SelfPlay, cfg.Window, cfg.AppConfigSHA256})
+	b, _ := json.Marshal(eff{cfg.Mode, cfg.Phases, cfg.Seed, cfg.Split, cfg.Playout, cfg.SelfPlay, cfg.Window, cfg.AppConfigSHA256, HashDefinition})
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }

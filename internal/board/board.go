@@ -325,22 +325,11 @@ func ReplayGameText(moves string) (Board, error) {
 	return b, nil
 }
 
-// ExactHash returns a SHA-256 hash of the exact board cells and side to move.
-func (b *Board) ExactHash() string {
-	return hashCells(b.cells, b.player)
-}
-
-// CanonicalHash returns a SHA-256 hash of the lexicographically smallest board
-// among the eight square symmetries, including side to move.
+// CanonicalHash returns a SHA-256 hash of the canonical side-to-move
+// perspective bitboard pair among the eight square symmetries.
 func (b *Board) CanonicalHash() string {
-	best := transformCells(b.cells, 0)
-	for t := 1; t < 8; t++ {
-		candidate := transformCells(b.cells, t)
-		if compareCells(candidate, best) < 0 {
-			best = candidate
-		}
-	}
-	return hashCells(best, b.player)
+	own, opponent := b.BitboardsSideToMove()
+	return CanonicalHashBits(own, opponent)
 }
 
 // EncodeSideToMove returns 64 signed bytes in a1..h8 order from the side-to-move
@@ -370,48 +359,56 @@ func (b *Board) BitboardsSideToMove() (own, opponent uint64) {
 	return own, opponent
 }
 
-func hashCells(cells [64]Cell, p Player) string {
-	var payload [65]byte
-	if p == Black {
-		payload[0] = 'b'
-	} else {
-		payload[0] = 'w'
-	}
-	for i, c := range cells {
-		switch c {
-		case CellBlack:
-			payload[i+1] = 1
-		case CellWhite:
-			payload[i+1] = 2
-		default:
-			payload[i+1] = 0
+// CanonicalHashBits returns a SHA-256 hash of an own/opponent bitboard pair
+// after canonicalizing the pair over the eight square symmetries.
+func CanonicalHashBits(own, opponent uint64) string {
+	bestOwn, bestOpponent := transformBits(own, 0), transformBits(opponent, 0)
+	for t := 1; t < 8; t++ {
+		candidateOwn := transformBits(own, t)
+		candidateOpponent := transformBits(opponent, t)
+		if compareBitPair(candidateOwn, candidateOpponent, bestOwn, bestOpponent) < 0 {
+			bestOwn, bestOpponent = candidateOwn, candidateOpponent
 		}
+	}
+	var payload [16]byte
+	for i := 0; i < 8; i++ {
+		payload[i] = byte(bestOwn >> uint(i*8))
+		payload[i+8] = byte(bestOpponent >> uint(i*8))
 	}
 	sum := sha256.Sum256(payload[:])
 	return hex.EncodeToString(sum[:])
 }
 
-func compareCells(a, b [64]Cell) int {
-	for i := 0; i < 64; i++ {
-		if a[i] < b[i] {
-			return -1
-		}
-		if a[i] > b[i] {
-			return 1
-		}
-	}
-	return 0
-}
-
-func transformCells(in [64]Cell, transform int) [64]Cell {
-	var out [64]Cell
+func transformBits(in uint64, transform int) uint64 {
+	var out uint64
 	for y := 0; y < 8; y++ {
 		for x := 0; x < 8; x++ {
+			from := uint(SquareXY(x, y))
+			if in&(uint64(1)<<from) == 0 {
+				continue
+			}
 			tx, ty := transformXY(x, y, transform)
-			out[SquareXY(tx, ty)] = in[SquareXY(x, y)]
+			to := uint(SquareXY(tx, ty))
+			out |= uint64(1) << to
 		}
 	}
 	return out
+}
+
+func compareBitPair(ownA, opponentA, ownB, opponentB uint64) int {
+	if ownA < ownB {
+		return -1
+	}
+	if ownA > ownB {
+		return 1
+	}
+	if opponentA < opponentB {
+		return -1
+	}
+	if opponentA > opponentB {
+		return 1
+	}
+	return 0
 }
 
 func transformXY(x, y, transform int) (int, int) {

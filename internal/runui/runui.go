@@ -575,21 +575,109 @@ func windowStrategy(e Event) string {
 func frame(title string, lines []string, noColor bool, color string) string {
 	const width = 78
 	var sb strings.Builder
-	titleRunes := len([]rune(title))
+	titleWidth := displayWidth(title)
 	header := title
 	if !noColor {
 		header = color + title + "\x1b[0m"
 	}
-	fmt.Fprintf(&sb, "╭─ %s %s╮\n", header, strings.Repeat("─", max(0, width-titleRunes-5)))
+	fmt.Fprintf(&sb, "╭─ %s %s╮\n", header, strings.Repeat("─", max(0, width-titleWidth-5)))
 	for _, line := range lines {
-		lineRunes := []rune(line)
-		if len(lineRunes) > width-4 {
-			line = string(lineRunes[:width-7]) + "..."
+		line = truncateDisplay(line, width-4)
+		padding := width - 4 - displayWidth(line)
+		if padding < 0 {
+			padding = 0
 		}
-		fmt.Fprintf(&sb, "│ %-*s │\n", width-4, line)
+		fmt.Fprintf(&sb, "│ %s%s │\n", line, strings.Repeat(" ", padding))
 	}
 	fmt.Fprintf(&sb, "╰%s╯", strings.Repeat("─", width-2))
 	return sb.String()
+}
+
+func truncateDisplay(s string, maxWidth int) string {
+	if displayWidth(s) <= maxWidth {
+		return s
+	}
+	const suffix = "..."
+	limit := maxWidth - displayWidth(suffix)
+	if limit <= 0 {
+		return suffix[:max(0, maxWidth)]
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		w := runeDisplayWidth(r)
+		if width+w > limit {
+			break
+		}
+		b.WriteRune(r)
+		width += w
+	}
+	b.WriteString(suffix)
+	return b.String()
+}
+
+func displayWidth(s string) int {
+	width := 0
+	inEscape := false
+	for _, r := range s {
+		if inEscape {
+			if r >= '@' && r <= '~' {
+				inEscape = false
+			}
+			continue
+		}
+		if r == '\x1b' {
+			inEscape = true
+			continue
+		}
+		width += runeDisplayWidth(r)
+	}
+	return width
+}
+
+func runeDisplayWidth(r rune) int {
+	if r == 0 || r < 32 || (r >= 0x7f && r < 0xa0) {
+		return 0
+	}
+	if r >= 0x300 && r <= 0x36f {
+		return 0
+	}
+	if r == 0xfe0f {
+		return 0
+	}
+	if isWideRune(r) {
+		return 2
+	}
+	return 1
+}
+
+func isWideRune(r rune) bool {
+	switch {
+	case r >= 0x1100 && r <= 0x115f:
+		return true
+	case r >= 0x2329 && r <= 0x232a:
+		return true
+	case r >= 0x2600 && r <= 0x27bf:
+		return true
+	case r >= 0x2e80 && r <= 0xa4cf:
+		return true
+	case r >= 0xac00 && r <= 0xd7a3:
+		return true
+	case r >= 0xf900 && r <= 0xfaff:
+		return true
+	case r >= 0xfe10 && r <= 0xfe19:
+		return true
+	case r >= 0xfe30 && r <= 0xfe6f:
+		return true
+	case r >= 0xff00 && r <= 0xff60:
+		return true
+	case r >= 0xffe0 && r <= 0xffe6:
+		return true
+	case r >= 0x1f000 && r <= 0x1faff:
+		return true
+	default:
+		return false
+	}
 }
 
 func bar(done, total int64, width int) string {

@@ -279,7 +279,7 @@ func TestEffectiveHashIgnoresSamplesPerPhase(t *testing.T) {
 	}
 }
 
-func TestRDRecordCountAndHashSidecarValidation(t *testing.T) {
+func TestRDRecordCountAndHashRecovery(t *testing.T) {
 	dir := t.TempDir()
 	rd := filepath.Join(dir, "train.rd")
 	var rec [RecordSize]byte
@@ -297,6 +297,13 @@ func TestRDRecordCountAndHashSidecarValidation(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("recordCount = %d, want 1", count)
 	}
+	seen := map[string]bool{}
+	if err := readRecordHashes(rd, seen); err != nil {
+		t.Fatalf("readRecordHashes: %v", err)
+	}
+	if len(seen) != 1 {
+		t.Fatalf("seen hashes = %d, want 1", len(seen))
+	}
 }
 
 func TestRecordCountTreatsEmptyFileAsMissing(t *testing.T) {
@@ -306,6 +313,54 @@ func TestRecordCountTreatsEmptyFileAsMissing(t *testing.T) {
 	}
 	if _, err := recordCount(rd); !os.IsNotExist(err) {
 		t.Fatalf("recordCount error = %v, want os.IsNotExist", err)
+	}
+}
+
+func TestResumeUsesRunStateWhenMetadataIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Mode:            ModeNormal,
+		OutputDir:       filepath.Join(dir, "datasets"),
+		Phases:          []int{1},
+		SamplesPerPhase: 1,
+		Seed:            7,
+		SeedSet:         true,
+		Split:           SplitConfig{Train: 1},
+		Playout:         PlayoutConfig{Dedupe: "canonical_board", MaxAttemptsMultiplier: 10},
+		SelfPlay:        SelfPlayConfig{AI: AIConfig{Name: "edax", Level: 1, Threads: 1}, Workers: 1, Retries: 1},
+		AppConfigSHA256: "app",
+		ConfigSHA256:    "config",
+		EngineConfig:    &config.Config{},
+	}
+	cfg.ConfigEffectiveHash = effectiveHash(cfg)
+	phaseDir := filepath.Join(cfg.OutputDir, "phase_01")
+	if err := os.MkdirAll(phaseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(phaseDir, "run_state.json"), buildRunState(cfg, 1)); err != nil {
+		t.Fatal(err)
+	}
+	var rec [RecordSize]byte
+	binary.LittleEndian.PutUint64(rec[0:8], 1)
+	if err := os.WriteFile(filepath.Join(phaseDir, "train.rd"), append([]byte(MagicBitboard), rec[:]...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Run(t.Context(), cfg, Options{Resume: true}); err != nil {
+		t.Fatalf("Run resume: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(phaseDir, "metadata.json")); err != nil {
+		t.Fatalf("metadata.json after resume: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(phaseDir, "stats.json")); err != nil {
+		t.Fatalf("stats.json after resume: %v", err)
+	}
+	count, err := recordCount(filepath.Join(phaseDir, "train.rd"))
+	if err != nil {
+		t.Fatalf("recordCount after resume: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("record count after resume = %d, want 1", count)
 	}
 }
 
@@ -550,12 +605,11 @@ size = 3
 		if count != 1 {
 			t.Fatalf("phase %d records = %d, want 1", phase, count)
 		}
-		hashCount, err := readHashes(filepath.Join(cfg.OutputDir, "phase_"+twoDigits(phase), "hashes.jsonl"), map[string]bool{})
-		if err != nil {
-			t.Fatalf("phase %d readHashes: %v", phase, err)
+		if _, err := os.Stat(filepath.Join(cfg.OutputDir, "phase_"+twoDigits(phase), "hashes.jsonl")); !os.IsNotExist(err) {
+			t.Fatalf("phase %d hashes.jsonl exists or stat failed: %v", phase, err)
 		}
-		if hashCount != 1 {
-			t.Fatalf("phase %d hashes = %d, want 1", phase, hashCount)
+		if _, err := os.Stat(filepath.Join(cfg.OutputDir, "phase_"+twoDigits(phase), "run_state.json")); err != nil {
+			t.Fatalf("phase %d run_state.json: %v", phase, err)
 		}
 		statsRaw, err := os.ReadFile(filepath.Join(cfg.OutputDir, "phase_"+twoDigits(phase), "stats.json"))
 		if err != nil {

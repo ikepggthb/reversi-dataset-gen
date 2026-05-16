@@ -102,8 +102,8 @@ func ensureNoExistingPhaseOutput(dir string) error {
 	for _, entry := range entries {
 		name := entry.Name()
 		if name == "train.rd" || name == "valid.rd" || name == "test.rd" ||
-			name == "metadata.json" || name == "stats.json" || name == "hashes.jsonl" {
-			return fmt.Errorf("%s already contains dataset output; use --resume to continue, --resume --repair to rebuild phases missing metadata.json, or --force to rebuild all", dir)
+			name == "run_state.json" || name == "metadata.json" || name == "stats.json" || name == "hashes.jsonl" {
+			return fmt.Errorf("%s already contains dataset output; use --resume to continue, --resume --repair to rebuild incompatible or incomplete phases, or --force to rebuild all", dir)
 		}
 	}
 	return nil
@@ -121,29 +121,36 @@ func runPhase(ctx context.Context, cfg Config, phase int, opts Options, scope *p
 			return phaseStats{}, err
 		}
 	}
-	hasResumeMeta := false
+	hasResumeState := false
 	if opts.Resume {
-		resumeMeta, ok, err := loadMetadata(filepath.Join(dir, "metadata.json"))
+		resumeState, ok, err := loadResumeState(dir)
 		if err != nil {
 			return phaseStats{}, err
 		}
-		hasResumeMeta = ok
+		hasResumeState = ok
 		if ok && !cfg.SeedSet {
-			cfg.Seed = resumeMeta.Seed
+			cfg.Seed = resumeState.Seed
 			cfg.ConfigEffectiveHash = effectiveHash(cfg)
 		}
 		if ok {
-			if err := checkResumeMetadata(resumeMeta, cfg, phase); err != nil {
-				return phaseStats{}, err
+			if err := checkResumeMetadata(resumeState, cfg, phase); err != nil {
+				if !opts.Repair {
+					return phaseStats{}, err
+				}
+				fmt.Fprintf(os.Stderr, "repair: phase_%02d has incompatible run state (%v); rebuilding this phase\n", phase, err)
+				if err := os.RemoveAll(dir); err != nil {
+					return phaseStats{}, err
+				}
+				hasResumeState = false
 			}
 		}
-		if opts.Repair && !hasResumeMeta {
+		if opts.Repair && !hasResumeState {
 			exists, err := phaseOutputExists(dir)
 			if err != nil {
 				return phaseStats{}, err
 			}
 			if exists {
-				fmt.Fprintf(os.Stderr, "repair: phase_%02d has dataset output without metadata.json; rebuilding this phase\n", phase)
+				fmt.Fprintf(os.Stderr, "repair: phase_%02d has dataset output without run_state.json or metadata.json; rebuilding this phase\n", phase)
 				if err := os.RemoveAll(dir); err != nil {
 					return phaseStats{}, err
 				}
@@ -153,14 +160,42 @@ func runPhase(ctx context.Context, cfg Config, phase int, opts Options, scope *p
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return phaseStats{}, err
 	}
+	if !opts.Resume || hasResumeState {
+		if err := writeJSON(filepath.Join(dir, "run_state.json"), buildRunState(cfg, phase)); err != nil {
+			return phaseStats{}, err
+		}
+	}
 	w, existingHashes, existingCounts, err := openPhaseWriters(dir, opts.Resume)
 	if err != nil {
-		return phaseStats{}, err
+		if !opts.Resume || !opts.Repair {
+			return phaseStats{}, err
+		}
+		fmt.Fprintf(os.Stderr, "repair: phase_%02d has corrupt resume output (%v); rebuilding this phase\n", phase, err)
+		if err := os.RemoveAll(dir); err != nil {
+			return phaseStats{}, err
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return phaseStats{}, err
+		}
+		hasResumeState = false
+		w, existingHashes, existingCounts, err = openPhaseWriters(dir, false)
+		if err != nil {
+			return phaseStats{}, err
+		}
+		if err := writeJSON(filepath.Join(dir, "run_state.json"), buildRunState(cfg, phase)); err != nil {
+			return phaseStats{}, err
+		}
 	}
 	defer w.close()
 	existing := existingCounts["train"] + existingCounts["valid"] + existingCounts["test"]
-	if opts.Resume && existing > 0 && !hasResumeMeta {
-		return phaseStats{}, fmt.Errorf("phase_%02d: existing records have no metadata.json; use --force to rebuild, --resume --repair to rebuild only this phase, or delete the phase directory", phase)
+	if opts.Resume && existing == 0 && !hasResumeState {
+		if err := writeJSON(filepath.Join(dir, "run_state.json"), buildRunState(cfg, phase)); err != nil {
+			return phaseStats{}, err
+		}
+		hasResumeState = true
+	}
+	if opts.Resume && existing > 0 && !hasResumeState {
+		return phaseStats{}, fmt.Errorf("phase_%02d: existing records have no run_state.json or metadata.json; use --resume --repair to rebuild only this phase, --force to rebuild all, or delete the phase directory", phase)
 	}
 	target := cfg.SamplesPerPhase
 	if cfg.Mode == ModeAllPositions {

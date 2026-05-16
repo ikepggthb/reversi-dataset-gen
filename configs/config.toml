@@ -1,9 +1,9 @@
 # Dataset generation config.
 
 mode = "normal"
-output_dir = "../datasets/test2_lv3-12"
-phases = "10..60"
-samples_per_phase = 1000
+output_dir = "../data/datasets/lv6-18"
+phases = "20..60"
+samples_per_phase = 100000
 
 [split]
 train = 0.98
@@ -11,13 +11,14 @@ valid = 0.01
 test = 0.01
 
 [playout]
-ai_probability = 0
+ai_probability = 0.33
 dedupe = "canonical_board"
 max_attempts_multiplier = 100
 
 [playout.ai]
+# name = "edax"
 name = "edax"
-level = 3
+level = 6
 threads = 1
 timeout = "10s"
 
@@ -27,7 +28,7 @@ retries = 3
 
 [self_play.ai]
 name = "edax"
-level = 20
+level = 12
 threads = 1
 timeout = "300s"
 
