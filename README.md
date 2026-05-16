@@ -371,7 +371,7 @@ datasets/
     train.rd        ← 学習データ（バイナリ）
     valid.rd        ← 検証データ（バイナリ）
     test.rd         ← テストデータ（バイナリ）
-    hashes.jsonl    ← 重複排除用 canonical hash の一覧
+    run_state.json  ← 中断再開用の生成条件 checkpoint
     metadata.json   ← 生成条件・エンジン情報などのメタデータ
     stats.json      ← 評価値の分布統計
   phase_11/
@@ -432,7 +432,7 @@ with open("train.rd", "rb") as f:
 # 途中で Ctrl+C した場合、互換性のある途中出力から続ける
 ./rdg --resume
 
-# metadata.json が壊れている phase だけ作り直してから続ける
+# run_state.json 不在、旧 hash 定義、壊れた .rd などの phase だけ作り直してから続ける
 ./rdg --resume --repair
 
 # 全 phase を最初からやり直す（既存出力を削除）

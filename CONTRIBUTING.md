@@ -12,6 +12,34 @@ make build
 make test
 ```
 
+## ブランチ名
+
+GitHub Flow に近い短命ブランチ運用を前提に、ブランチ名は軽量にする。
+
+```text
+feat/<name>
+fix/<name>
+docs/<name>
+chore/<name>
+```
+
+例:
+
+```text
+feat/window-mode
+fix/edax-timeout
+docs/readme-usage
+chore/ci
+```
+
+ルール:
+
+- `main` から作る
+- 小文字英数字とハイフンを使う
+- 1 ブランチ = 1 目的にする
+- PR マージ後はブランチを削除する
+- Issue 番号は必要なときだけ入れる（例: `fix/12-edax-timeout`）
+
 ## コミットメッセージ
 
 ### フォーマット（1 行目）

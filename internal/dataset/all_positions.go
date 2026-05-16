@@ -57,7 +57,7 @@ func runAllPositionsPhase(ctx context.Context, cfg Config, phase int, w *phaseWr
 		}
 		split := chooseSplit(r.hash, cfg.Split)
 		own, opp := r.b.BitboardsSideToMove()
-		if err := w.write(split, own, opp, r.value, r.hash); err != nil {
+		if err := w.write(split, own, opp, r.value); err != nil {
 			cancel()
 			return phaseStats{}, err
 		}

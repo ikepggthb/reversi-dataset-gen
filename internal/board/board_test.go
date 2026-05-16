@@ -350,20 +350,19 @@ func TestCanonicalHashMatchesSymmetricPosition(t *testing.T) {
 	if err := b.Apply(Move(mustParseSquare(t, "d3"))); err != nil {
 		t.Fatal(err)
 	}
-	if a.ExactHash() == b.ExactHash() {
-		t.Fatalf("ExactHash unexpectedly matched for different orientations")
-	}
 	if a.CanonicalHash() != b.CanonicalHash() {
 		t.Fatalf("CanonicalHash mismatch for symmetric positions")
 	}
 }
 
-func TestCanonicalHashIncludesSideToMove(t *testing.T) {
+func TestCanonicalHashMatchesSideToMoveBitboards(t *testing.T) {
 	a := New()
-	b := New()
-	b.player = White
-	if a.CanonicalHash() == b.CanonicalHash() {
-		t.Fatalf("CanonicalHash should include side to move")
+	if err := a.Apply(Move(mustParseSquare(t, "f5"))); err != nil {
+		t.Fatal(err)
+	}
+	own, opponent := a.BitboardsSideToMove()
+	if got, want := a.CanonicalHash(), CanonicalHashBits(own, opponent); got != want {
+		t.Fatalf("CanonicalHash = %s, want %s", got, want)
 	}
 }
 

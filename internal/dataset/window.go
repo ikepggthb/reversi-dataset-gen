@@ -233,7 +233,7 @@ func runWindowedNormal(ctx context.Context, cfg Config, opts Options, started ti
 			st.seen[sample.hash] = true
 			split := chooseSplit(sample.hash, cfg.Split)
 			own, opp := sample.b.BitboardsSideToMove()
-			if err := st.writers.write(split, own, opp, sample.value, sample.hash); err != nil {
+			if err := st.writers.write(split, own, opp, sample.value); err != nil {
 				cancel()
 				return err
 			}
@@ -336,32 +336,40 @@ func openWindowPhaseStates(cfg Config, phases []int, opts Options) ([]*windowPha
 				return nil, err
 			}
 		}
-		hasResumeMeta := false
+		hasResumeState := false
 		if opts.Resume {
-			resumeMeta, ok, err := loadMetadata(filepath.Join(dir, "metadata.json"))
+			resumeState, ok, err := loadResumeState(dir)
 			if err != nil {
 				closeStates()
 				return nil, err
 			}
-			hasResumeMeta = ok
+			hasResumeState = ok
 			if ok && !cfg.SeedSet {
-				cfg.Seed = resumeMeta.Seed
+				cfg.Seed = resumeState.Seed
 				cfg.ConfigEffectiveHash = effectiveHash(cfg)
 			}
 			if ok {
-				if err := checkResumeMetadata(resumeMeta, cfg, phase); err != nil {
-					closeStates()
-					return nil, err
+				if err := checkResumeMetadata(resumeState, cfg, phase); err != nil {
+					if !opts.Repair {
+						closeStates()
+						return nil, err
+					}
+					fmt.Fprintf(os.Stderr, "repair: phase_%02d has incompatible run state (%v); rebuilding this phase\n", phase, err)
+					if err := os.RemoveAll(dir); err != nil {
+						closeStates()
+						return nil, err
+					}
+					hasResumeState = false
 				}
 			}
-			if opts.Repair && !hasResumeMeta {
+			if opts.Repair && !hasResumeState {
 				exists, err := phaseOutputExists(dir)
 				if err != nil {
 					closeStates()
 					return nil, err
 				}
 				if exists {
-					fmt.Fprintf(os.Stderr, "repair: phase_%02d has dataset output without metadata.json; rebuilding this phase\n", phase)
+					fmt.Fprintf(os.Stderr, "repair: phase_%02d has dataset output without run_state.json or metadata.json; rebuilding this phase\n", phase)
 					if err := os.RemoveAll(dir); err != nil {
 						closeStates()
 						return nil, err
@@ -373,16 +381,51 @@ func openWindowPhaseStates(cfg Config, phases []int, opts Options) ([]*windowPha
 			closeStates()
 			return nil, err
 		}
+		if !opts.Resume || hasResumeState {
+			if err := writeJSON(filepath.Join(dir, "run_state.json"), buildRunState(cfg, phase)); err != nil {
+				closeStates()
+				return nil, err
+			}
+		}
 		w, seen, counts, err := openPhaseWriters(dir, opts.Resume)
 		if err != nil {
-			closeStates()
-			return nil, err
+			if !opts.Resume || !opts.Repair {
+				closeStates()
+				return nil, err
+			}
+			fmt.Fprintf(os.Stderr, "repair: phase_%02d has corrupt resume output (%v); rebuilding this phase\n", phase, err)
+			if err := os.RemoveAll(dir); err != nil {
+				closeStates()
+				return nil, err
+			}
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				closeStates()
+				return nil, err
+			}
+			hasResumeState = false
+			w, seen, counts, err = openPhaseWriters(dir, false)
+			if err != nil {
+				closeStates()
+				return nil, err
+			}
+			if err := writeJSON(filepath.Join(dir, "run_state.json"), buildRunState(cfg, phase)); err != nil {
+				closeStates()
+				return nil, err
+			}
 		}
 		existing := counts["train"] + counts["valid"] + counts["test"]
-		if opts.Resume && existing > 0 && !hasResumeMeta {
+		if opts.Resume && existing == 0 && !hasResumeState {
+			if err := writeJSON(filepath.Join(dir, "run_state.json"), buildRunState(cfg, phase)); err != nil {
+				w.close()
+				closeStates()
+				return nil, err
+			}
+			hasResumeState = true
+		}
+		if opts.Resume && existing > 0 && !hasResumeState {
 			w.close()
 			closeStates()
-			return nil, fmt.Errorf("phase_%02d: existing records have no metadata.json; use --force to rebuild, --resume --repair to rebuild only this phase, or delete the phase directory", phase)
+			return nil, fmt.Errorf("phase_%02d: existing records have no run_state.json or metadata.json; use --resume --repair to rebuild only this phase, --force to rebuild all, or delete the phase directory", phase)
 		}
 		st := &windowPhaseState{
 			phase: phase, index: i + 1, dir: dir, writers: w, seen: seen,
@@ -408,7 +451,7 @@ func openWindowPhaseStates(cfg Config, phases []int, opts Options) ([]*windowPha
 
 func firstResumeSeed(cfg Config, phases []int) (int64, bool, error) {
 	for _, phase := range phases {
-		meta, ok, err := loadMetadata(filepath.Join(cfg.OutputDir, fmt.Sprintf("phase_%02d", phase), "metadata.json"))
+		meta, ok, err := loadResumeState(filepath.Join(cfg.OutputDir, fmt.Sprintf("phase_%02d", phase)))
 		if err != nil {
 			return 0, false, err
 		}

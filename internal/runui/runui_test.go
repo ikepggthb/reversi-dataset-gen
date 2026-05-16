@@ -22,6 +22,18 @@ func TestFormatDatasetFrame(t *testing.T) {
 	}
 }
 
+func TestFrameKeepsBordersAlignedWithEmojiAndWideText(t *testing.T) {
+	out := frame("▶️ rdg dataset", []string{
+		"Mode     ▶️ normal",
+		"Detail   日本語の長いメッセージとemoji ✅✅✅",
+	}, true, "")
+	for _, line := range strings.Split(out, "\n") {
+		if got := displayWidth(line); got != 78 {
+			t.Fatalf("line width = %d, want 78: %q\n%s", got, line, out)
+		}
+	}
+}
+
 func TestFormatNoColorAndNoEmoji(t *testing.T) {
 	out := Format(Event{
 		Stage: "dataset", Title: "rdg dataset", Mode: "all_positions", Phase: 2,
